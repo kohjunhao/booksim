@@ -692,6 +692,94 @@ select:focus-visible {
   font-size: 0.92em;
 }
 
+.about {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: var(--space-2xl);
+  padding-top: var(--space-xl);
+  border-top: 1px solid var(--hair);
+  scroll-margin-top: 20px;
+}
+
+.about-copy {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.about-title {
+  font-family: var(--font-serif);
+  font-size: clamp(1.7rem, 3vw, 2.4rem);
+  font-weight: 400;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.about-copy h3,
+.sched-wrap h3 {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--amber-dim);
+}
+
+.about-copy p {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  line-height: 1.5;
+  color: var(--paper);
+  max-width: 54ch;
+}
+
+.sched-wrap {
+  display: grid;
+  align-content: start;
+  gap: var(--space-sm);
+}
+
+.sched {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+}
+
+.sched th,
+.sched td {
+  padding: 11px 8px 11px 0;
+  border-bottom: 1px solid var(--hair);
+  text-align: left;
+  font-weight: 400;
+}
+
+.sched thead th {
+  color: var(--mute);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.sched tbody th {
+  font-weight: 400;
+}
+
+.sched tr.cap th,
+.sched tr.cap td {
+  color: var(--no);
+}
+
+.sched-note {
+  margin: 8px 0 0;
+  color: var(--mute);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.95rem;
+  max-width: 36ch;
+}
+
 .events {
   display: flex;
   flex-wrap: wrap;
@@ -730,7 +818,8 @@ select:focus-visible {
   }
 
   .stage,
-  .lower {
+  .lower,
+  .about {
     grid-template-columns: 1fr;
     gap: var(--space-xl);
   }
