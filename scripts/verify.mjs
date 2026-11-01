@@ -24,8 +24,8 @@ async function run(name, viewport) {
 
   const board = await page.locator('.board').innerText()
   const cents0 = grabCents(board)
-  if (cents0[0] < 62 || cents0[0] > 63) errors.push(`${name}: Yes not ~62.4¢, got ${cents0[0]}`)
-  if (cents0[1] < 41 || cents0[1] > 42) errors.push(`${name}: No not ~41.6¢, got ${cents0[1]}`)
+  if (cents0[0] < 62.5 || cents0[0] > 63.5) errors.push(`${name}: Yes not ~63.0¢, got ${cents0[0]}`)
+  if (cents0[1] < 41.5 || cents0[1] > 42.5) errors.push(`${name}: No not ~42.0¢, got ${cents0[1]}`)
 
   await page.screenshot({ path: `${out}/${name}-empty.png`, fullPage: true })
 
@@ -34,14 +34,17 @@ async function run(name, viewport) {
   await page.waitForTimeout(80)
   const after1k = grabCents(await page.locator('.board').innerText())
   const d1 = after1k[0] - cents0[0]
-  if (d1 < 0 || d1 > 1) errors.push(`${name}: $1k should barely move Yes, delta ${d1}`)
+  if (d1 !== 0) errors.push(`${name}: $1k should not move Yes under the floor, delta ${d1}`)
 
-  await page.locator('.chip', { hasText: '$50,000' }).click()
+  await page.locator('.chip', { hasText: '$100,000' }).click()
   await page.locator('.take').click()
   await page.waitForTimeout(80)
-  const after50 = grabCents(await page.locator('.board').innerText())
-  if (after50[0] < after1k[0] + 10) {
-    errors.push(`${name}: $50k should slam Yes, ${after1k[0]} -> ${after50[0]}`)
+  const afterBig = grabCents(await page.locator('.board').innerText())
+  if (afterBig[0] <= after1k[0]) {
+    errors.push(`${name}: $100k should lift Yes juice, ${after1k[0]} -> ${afterBig[0]}`)
+  }
+  if (afterBig[1] !== cents0[1]) {
+    errors.push(`${name}: No should stay at baseline, ${cents0[1]} -> ${afterBig[1]}`)
   }
 
   await page.screenshot({ path: `${out}/${name}-slammed.png`, fullPage: true })
@@ -54,7 +57,7 @@ async function run(name, viewport) {
   await page.locator('.take').click()
   await page.waitForTimeout(80)
   const healed = grabCents(await page.locator('.board').innerText())
-  if (healed[0] >= after50[0]) errors.push(`${name}: buying No should heal Yes, ${after50[0]} -> ${healed[0]}`)
+  if (healed[0] >= afterBig[0]) errors.push(`${name}: buying No should heal Yes, ${afterBig[0]} -> ${healed[0]}`)
 
   await page.locator('.outcome.is-yes').click()
   await page.locator('input[aria-label="Stake"]').fill('5000000')

@@ -225,7 +225,8 @@ select:focus-visible {
 
 .under {
   display: flex;
-  gap: var(--space-md);
+  flex-wrap: wrap;
+  gap: 4px var(--space-md);
   color: var(--mute);
   font-variant-numeric: tabular-nums;
   font-size: 0.95rem;
@@ -446,6 +447,15 @@ select:focus-visible {
   height: 8px;
   background: var(--rail);
   position: relative;
+}
+
+.track .floor {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--amber-dim);
+  transform: translateX(-0.5px);
 }
 
 .fill {

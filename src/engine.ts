@@ -1,4 +1,4 @@
-/** Logit-inventory book. Liability cap M per outcome. Fat bets walk the curve. */
+/** Size-dependent vig on own-side liability. Other side stays at baseline. */
 
 export type Side = 0 | 1
 
@@ -6,15 +6,9 @@ export type Book = {
   p: [number, number]
   L: [number, number]
   M: number
-  kappa: number
-  vig: number
-}
-
-export type Slice = {
-  stake: number
-  odds: number
-  price: number
-  dL: number
+  m0: number
+  m1: number
+  L0: number
 }
 
 export type Fill = {
@@ -27,6 +21,8 @@ export type Fill = {
   avgPrice: number
   startPrice: number
   endPrice: number
+  startVig: number
+  endVig: number
   ticketOdds: number
   slices: number
   LBefore: [number, number]
@@ -40,29 +36,40 @@ export const MIN_PRICE = 0.01
 
 export function makeBook(partial: Partial<Book> & { pYes?: number } = {}): Book {
   const pYes = clamp(partial.pYes ?? partial.p?.[0] ?? 0.6, 0.02, 0.98)
+  const M = partial.M ?? 100_000
+  const m0 = partial.m0 ?? 0.05
+  const m1 = Math.max(partial.m1 ?? 0.18, m0)
+  const L0 = clamp(partial.L0 ?? 25_000, 0, Math.max(0, M - 1))
   return {
     p: [pYes, 1 - pYes],
     L: partial.L ? [partial.L[0], partial.L[1]] : [0, 0],
-    M: partial.M ?? 100_000,
-    kappa: partial.kappa ?? 3,
-    vig: partial.vig ?? 0.04,
+    M,
+    m0,
+    m1,
+    L0,
   }
 }
 
-export function inventoryQ(book: Book): [number, number] {
-  const z0 = Math.log(book.p[0]) + book.kappa * (book.L[0] / book.M)
-  const z1 = Math.log(book.p[1]) + book.kappa * (book.L[1] / book.M)
-  const peak = Math.max(z0, z1)
-  const e0 = Math.exp(z0 - peak)
-  const e1 = Math.exp(z1 - peak)
-  const s = e0 + e1
-  return [e0 / s, e1 / s]
+export function vigForLiability(book: Book, L: number): number {
+  if (!(L > book.L0)) return book.m0
+  const m0 = Math.max(book.m0, 1e-6)
+  const m1 = Math.max(book.m1, m0)
+  if (L >= book.M) return m1
+  const span = book.M - book.L0
+  if (span <= 1e-9) return m1
+  const t = (L - book.L0) / span
+  return m0 * (m1 / m0) ** t
+}
+
+export function sideVig(book: Book, side: Side): number {
+  return vigForLiability(book, book.L[side])
 }
 
 export function postedPrices(book: Book): [number, number] {
-  const q = inventoryQ(book)
-  const m = 1 + book.vig
-  return [clamp(q[0] * m, MIN_PRICE, MAX_PRICE), clamp(q[1] * m, MIN_PRICE, MAX_PRICE)]
+  return [
+    clamp(book.p[0] * (1 + vigForLiability(book, book.L[0])), MIN_PRICE, MAX_PRICE),
+    clamp(book.p[1] * (1 + vigForLiability(book, book.L[1])), MIN_PRICE, MAX_PRICE),
+  ]
 }
 
 export function walk(book: Book, side: Side, stake: number): Fill {
@@ -70,6 +77,7 @@ export function walk(book: Book, side: Side, stake: number): Fill {
   const other: Side = side === 0 ? 1 : 0
   const L: [number, number] = [book.L[0], book.L[1]]
   const LBefore: [number, number] = [L[0], L[1]]
+  const startVig = vigForLiability(book, L[side])
   const startPrice = postedPrices({ ...book, L })[side]
 
   let remaining = requested
@@ -115,6 +123,8 @@ export function walk(book: Book, side: Side, stake: number): Fill {
     avgPrice,
     startPrice,
     endPrice: lastPrice,
+    startVig,
+    endVig: vigForLiability({ ...book, L }, L[side]),
     ticketOdds,
     slices,
     LBefore,
@@ -140,7 +150,8 @@ export type CurvePoint = {
 export function impactCurve(book: Book, side: Side, n = 36): CurvePoint[] {
   const cap = maxFillable(book, side)
   if (cap < 1) return []
-  const out: CurvePoint[] = [{ stake: 0, avg: postedPrices(book)[side], last: postedPrices(book)[side] }]
+  const board = postedPrices(book)[side]
+  const out: CurvePoint[] = [{ stake: 0, avg: board, last: board }]
   for (let i = 1; i <= n; i++) {
     const fill = walk(book, side, (cap * i) / n)
     if (fill.filled < 1) continue

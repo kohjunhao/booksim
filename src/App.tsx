@@ -2,9 +2,9 @@ import { useMemo, useState, type MouseEvent, type TouchEvent } from 'react'
 import {
   applyFill,
   impactCurve,
-  inventoryQ,
   makeBook,
   postedPrices,
+  sideVig,
   walk,
   type Book,
   type Fill,
@@ -45,15 +45,20 @@ const EVENTS: EventDef[] = [
 ]
 
 const STAKE_CHIPS = [1_000, 10_000, 50_000, 100_000]
-const KAPPA = [
-  { v: 1.5, lab: 'Soft 1.5' },
-  { v: 3, lab: 'Desk 3' },
-  { v: 5, lab: 'Slam 5' },
-]
-const VIG = [
-  { v: 0.02, lab: '2%' },
+const BASELINE = [
   { v: 0.04, lab: '4%' },
-  { v: 0.08, lab: '8%' },
+  { v: 0.05, lab: '5%' },
+  { v: 0.06, lab: '6%' },
+]
+const FLOOR = [
+  { v: 15_000, lab: '$15k' },
+  { v: 25_000, lab: '$25k' },
+  { v: 50_000, lab: '$50k' },
+]
+const TERMINAL = [
+  { v: 0.15, lab: '15%' },
+  { v: 0.18, lab: '18%' },
+  { v: 0.2, lab: '20%' },
 ]
 const CAPS = [
   { v: 25_000, lab: '$25k' },
@@ -77,11 +82,10 @@ export function App() {
   const [hover, setHover] = useState<number | null>(null)
 
   const prices = postedPrices(book)
-  const fair = inventoryQ(book)
+  const juice: [number, number] = [sideVig(book, 0), sideVig(book, 1)]
   const stake = parseStake(stakeRaw)
   const quote = useMemo(() => walk(book, side, stake), [book, side, stake])
   const curve = useMemo(() => impactCurve(book, side), [book, side])
-  const util: [number, number] = [book.L[0] / book.M, book.L[1] / book.M]
   const overround = prices[0] + prices[1] - 1
 
   function resetBook(next: Partial<Book> & { pYes?: number }, clearTape = false) {
@@ -120,10 +124,10 @@ export function App() {
             Max <b>{money(book.M)}</b> / outcome
           </span>
           <span>
-            κ <b>{book.kappa}</b>
+            <b>{pct(book.m0)}</b> to {money(book.L0)}
           </span>
           <span>
-            Vig <b>{pct(book.vig)}</b>
+            <b>{pct(book.m1)}</b> at cap
           </span>
           <span>
             Book <b>{pct(overround)}</b>
@@ -158,22 +162,25 @@ export function App() {
             <Outcome
               label="Yes"
               price={prices[0]}
-              fair={fair[0]}
+              fair={book.p[0]}
+              juice={juice[0]}
               on={side === 0}
-              hot={util[0] > 0.55}
+              hot={juice[0] > book.m0 + 1e-6}
               onPick={() => setSide(0)}
             />
             <Outcome
               label="No"
               price={prices[1]}
-              fair={fair[1]}
+              fair={book.p[1]}
+              juice={juice[1]}
               on={side === 1}
-              hot={util[1] > 0.55}
+              hot={juice[1] > book.m0 + 1e-6}
               onPick={() => setSide(1)}
             />
           </div>
           <p className="hint">
-            Buy the heavy side and the tote walks against you. Buy the other side and it heals.
+            Juice stays {pct(book.m0)} until {money(book.L0)} of liability on that side, then ramps
+            to {pct(book.m1)} at the cap. The other side stays at {pct(book.m0)}.
           </p>
         </div>
 
@@ -190,8 +197,8 @@ export function App() {
       </div>
 
       <section className="rails" aria-label="Liability">
-        <Rail label="Yes" L={book.L[0]} M={book.M} kind="yes" />
-        <Rail label="No" L={book.L[1]} M={book.M} kind="no" />
+        <Rail label="Yes" L={book.L[0]} M={book.M} L0={book.L0} kind="yes" />
+        <Rail label="No" L={book.L[1]} M={book.M} L0={book.L0} kind="no" />
       </section>
 
       <section className="curve-block">
@@ -206,7 +213,7 @@ export function App() {
         <div className="hover-fig">
           {hover != null && curve[hover]
             ? `${money(curve[hover].stake)} walks the board to ${cents(curve[hover].last)} · avg ${cents(curve[hover].avg)}`
-            : 'Size on the x. Cents on the y. The gap is the slam.'}
+            : 'Flat to the floor, then the juice ramps. Size on the x, cents on the y.'}
         </div>
       </section>
 
@@ -215,8 +222,8 @@ export function App() {
           <h2>Tape</h2>
           {tape.length === 0 ? (
             <p className="empty">
-              Book is empty. A thousand dollars barely moves {cents(prices[0])}. A hundred thousand
-              walks the whole curve.
+              Book is empty. Juice is {pct(book.m0)} until {money(book.L0)} of L. A thousand dollars
+              does not move {cents(prices[0])}.
             </p>
           ) : (
             <ol className="tape">
@@ -258,14 +265,14 @@ export function App() {
             </div>
           </div>
           <div className="knob">
-            <label>Slam κ</label>
+            <label>Baseline</label>
             <div className="row">
-              {KAPPA.map((k) => (
+              {BASELINE.map((k) => (
                 <button
                   key={k.v}
                   type="button"
-                  className={book.kappa === k.v ? 'is-on' : ''}
-                  onClick={() => resetBook({ kappa: k.v })}
+                  className={book.m0 === k.v ? 'is-on' : ''}
+                  onClick={() => resetBook({ m0: k.v, m1: Math.max(book.m1, k.v) })}
                 >
                   {k.lab}
                 </button>
@@ -273,14 +280,29 @@ export function App() {
             </div>
           </div>
           <div className="knob">
-            <label>Vig</label>
+            <label>Ramp from</label>
             <div className="row">
-              {VIG.map((k) => (
+              {FLOOR.map((k) => (
                 <button
                   key={k.v}
                   type="button"
-                  className={book.vig === k.v ? 'is-on' : ''}
-                  onClick={() => resetBook({ vig: k.v })}
+                  className={book.L0 === k.v ? 'is-on' : ''}
+                  onClick={() => resetBook({ L0: k.v })}
+                >
+                  {k.lab}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="knob">
+            <label>At cap</label>
+            <div className="row">
+              {TERMINAL.map((k) => (
+                <button
+                  key={k.v}
+                  type="button"
+                  className={book.m1 === k.v ? 'is-on' : ''}
+                  onClick={() => resetBook({ m1: k.v })}
                 >
                   {k.lab}
                 </button>
@@ -296,11 +318,13 @@ export function App() {
                   type="button"
                   className={book.M === k.v ? 'is-on' : ''}
                   onClick={() =>
-                    setBook((b) => ({
-                      ...b,
-                      M: k.v,
-                      L: [Math.min(b.L[0], k.v), Math.min(b.L[1], k.v)],
-                    }))
+                    setBook((b) =>
+                      makeBook({
+                        ...b,
+                        M: k.v,
+                        L: [Math.min(b.L[0], k.v), Math.min(b.L[1], k.v)],
+                      }),
+                    )
                   }
                 >
                   {k.lab}
@@ -309,8 +333,9 @@ export function App() {
             </div>
           </div>
           <p className="notes">
-            z = log(p) + κ · L/M. Softmax, then vig. Fat bets walk in $500 slices. L grows by stake ×
-            (odds − 1). The other side heals by the stake. Cap {money(book.M)} a side.
+            Posted = fair × (1 + juice). Juice is {pct(book.m0)} until {money(book.L0)} of L on that
+            side, then exponential to {pct(book.m1)} at {money(book.M)}. Other side stays at{' '}
+            {pct(book.m0)}. Walk in $500 slices.
           </p>
         </section>
       </div>
@@ -322,6 +347,7 @@ function Outcome({
   label,
   price,
   fair,
+  juice,
   on,
   hot,
   onPick,
@@ -329,6 +355,7 @@ function Outcome({
   label: string
   price: number
   fair: number
+  juice: number
   on: boolean
   hot: boolean
   onPick: () => void
@@ -350,6 +377,9 @@ function Outcome({
       <span className="under">
         <span>
           fair <strong>{pct(fair)}</strong>
+        </span>
+        <span>
+          juice <strong>{pct(juice)}</strong>
         </span>
         <span>
           dec <strong>{odds(price)}</strong>
@@ -434,6 +464,12 @@ function Ticket({
               </span>
             </div>
             <div className="row">
+              <em>Juice</em>
+              <span>
+                {pct(quote.startVig)} → {pct(quote.endVig)}
+              </span>
+            </div>
+            <div className="row">
               <em>If {name} wins</em>
               <span>+{money(profit)}</span>
             </div>
@@ -468,19 +504,23 @@ function Rail({
   label,
   L,
   M,
+  L0,
   kind,
 }: {
   label: string
   L: number
   M: number
+  L0: number
   kind: 'yes' | 'no'
 }) {
   const cushion = L < 0
   const w = cushion ? 0 : Math.min(100, (L / M) * 100)
+  const floor = Math.min(100, (L0 / M) * 100)
   return (
     <div className="rail">
       <div className="who">{label}</div>
       <div className="track" aria-hidden="true">
+        <div className="floor" style={{ left: `${floor}%` }} />
         <div className={`fill ${kind}`} style={{ width: `${w}%` }} />
       </div>
       <div className={`fig ${cushion ? 'cushion' : ''}`}>
